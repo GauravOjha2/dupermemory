@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "DuperMemory",
+  "version": "0.1.0",
+  "description": "Send your ChatGPT conversation to Claude with one click.",
+
+  "permissions": [
+    "tabs"
+  ],
+
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://claude.ai/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["utils/summarize.js", "content/chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["content/claude.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
