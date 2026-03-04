@@ -162,6 +162,17 @@ function injectButton() {
     padding:              "4px 0",
   });
 
+  var label = document.createElement("div");
+  label.textContent = "DUPERMEMORY";
+  Object.assign(label.style, {
+    padding:       "7px 12px 3px",
+    fontSize:      "9.5px",
+    fontWeight:    "600",
+    color:         "#52525b",
+    letterSpacing: "0.06em",
+  });
+  dropdown.appendChild(label);
+
   container.appendChild(btn);
   container.appendChild(dropdown);
   document.body.appendChild(container);
@@ -242,11 +253,17 @@ function handleModelSelect(e) {
   if (dropdown) dropdown.style.display = "none";
 
   var btn = document.getElementById(DUPERMEM_BUTTON_ID);
-  setBusy(btn, true);
+  setStatus(btn, "capturing");
+  if (DUPERMEM_STATUS_TIMEOUT) clearTimeout(DUPERMEM_STATUS_TIMEOUT);
+  DUPERMEM_STATUS_TIMEOUT = setTimeout(function () {
+    var b = document.getElementById(DUPERMEM_BUTTON_ID);
+    if (b && b.disabled) setStatus(b, "idle");
+  }, 120000);
 
   try {
     var transcript = captureConversationText();
     if (!transcript || transcript.length < 20) {
+      setStatus(btn, "idle");
       alert(
         "DuperMemory: No conversation content found.\n\n" +
         "Make sure you are on a conversation page with at least one message."
@@ -266,25 +283,43 @@ function handleModelSelect(e) {
 
   } catch (err) {
     console.error("[DuperMemory]", err);
+    setStatus(btn, "idle");
 
     if (err.message && err.message.indexOf("Extension context invalidated") !== -1) {
       alert("DuperMemory: Extension was reloaded.\n\nPlease refresh this tab (F5) and try again.");
     } else {
       alert("DuperMemory: Capture failed.\n\n" + err.message);
     }
-  } finally {
-    setBusy(btn, false);
   }
 }
 
-function setBusy(btn, busy) {
+var DUPERMEM_STATUS_TIMEOUT = null;
+
+function setStatus(btn, status, detail) {
   if (!btn) return;
-  btn.disabled = busy;
-  btn.innerHTML = busy
-    ? '<span style="margin-right:6px;font-size:14px;vertical-align:-1px">&#x21C4;</span>Capturing\u2026'
-    : '<span style="margin-right:6px;font-size:14px;vertical-align:-1px">&#x21C4;</span>Ask another AI';
-  btn.style.opacity = busy ? "0.5" : "1";
-  btn.style.cursor  = busy ? "wait" : "pointer";
+  var icon = '<span style="margin-right:6px;font-size:14px;vertical-align:-1px">&#x21C4;</span>';
+  if (status === "idle") {
+    btn.disabled = false;
+    btn.innerHTML = icon + "Ask another AI";
+    btn.style.opacity = "1";
+    btn.style.cursor  = "pointer";
+    if (DUPERMEM_STATUS_TIMEOUT) { clearTimeout(DUPERMEM_STATUS_TIMEOUT); DUPERMEM_STATUS_TIMEOUT = null; }
+    return;
+  }
+  btn.disabled = true;
+  btn.style.cursor = "wait";
+  var labels = {
+    capturing: "Capturing\u2026",
+    opening:   "Opening " + (detail || "target") + "\u2026",
+    waiting:   "Waiting for response\u2026",
+    done:      "Done \u2713",
+  };
+  btn.innerHTML = icon + (labels[status] || status);
+  btn.style.opacity = status === "done" ? "1" : "0.7";
+  if (status === "done") {
+    if (DUPERMEM_STATUS_TIMEOUT) clearTimeout(DUPERMEM_STATUS_TIMEOUT);
+    DUPERMEM_STATUS_TIMEOUT = setTimeout(function () { setStatus(btn, "idle"); }, 2000);
+  }
 }
 
 // ─── Critique receiver ────────────────────────────────────────────────────────
@@ -294,6 +329,13 @@ chrome.runtime.onMessage.addListener(function (message) {
     injectCritiqueFlow(message.content).catch(function (err) {
       console.error("[DuperMemory] Critique injection failed:", err.message);
     });
+  }
+  if (message.type === "STATUS_UPDATE") {
+    var btn = document.getElementById(DUPERMEM_BUTTON_ID);
+    setStatus(btn, message.status, message.detail);
+  }
+  if (message.type === "TOGGLE_DROPDOWN") {
+    toggleDropdown();
   }
 });
 

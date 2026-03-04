@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -c background.js)",
+      "Bash(node -c content/chatgpt.js)",
+      "Bash(node -c content/claude.js)",
+      "Bash(node -c content/gemini.js)",
+      "Bash(node -c content/perplexity.js)",
+      "Bash(node -c content/deepseek.js)",
+      "Bash(node -c utils/models.js)",
+      "Bash(node -c utils/format.js)",
+      "Bash(node -c utils/memory.js)",
+      "Bash(node -c utils/summarize-generic.js)",
+      "Bash(node -c popup.js)",
+      "Bash(node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''manifest.json'',''utf8''\\)\\); console.log\\(''manifest.json is valid JSON''\\)\")"
+    ]
+  }
+}

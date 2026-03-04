@@ -27,6 +27,18 @@ importScripts("utils/summarize-generic.js");
 var pendingContext = {}; // targetTabId → { contextBlock, sourceTabId, conversationId }
 var pendingReview  = {}; // targetTabId → { sourceTabId, conversationId }
 
+// ─── Status updates to source tab ──────────────────────────────────────────
+
+function sendStatusUpdate(sourceTabId, status, detail) {
+  chrome.tabs.sendMessage(sourceTabId, {
+    type:   "STATUS_UPDATE",
+    status: status,
+    detail: detail || "",
+  }, function () {
+    if (chrome.runtime.lastError) { /* source tab may be closed */ }
+  });
+}
+
 // ─── Message handler ──────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
@@ -57,6 +69,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
       };
 
       sendResponse({ type: "INJECT", contextBlock: pending.contextBlock, conversationId: pending.conversationId });
+      sendStatusUpdate(pending.sourceTabId, "waiting");
     } else {
       sendResponse(null); // Regular visit, no pending context.
     }
@@ -85,6 +98,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 
       // Send only the conversational reply back to the source tab.
       sendCritiqueToTab(review.sourceTabId, parsed.reply, respModel.name);
+      sendStatusUpdate(review.sourceTabId, "done");
     }
     return false;
   }
@@ -121,6 +135,7 @@ function handleCapture(transcript, targetModelKey, conversationId, sourceTabId) 
     chrome.tabs.create({ url: model.url }, function (tab) {
       if (chrome.runtime.lastError) {
         console.error("[DuperMemory] Failed to open " + model.name + " tab:", chrome.runtime.lastError.message);
+        sendStatusUpdate(sourceTabId, "idle");
         return;
       }
       pendingContext[tab.id] = {
@@ -128,6 +143,7 @@ function handleCapture(transcript, targetModelKey, conversationId, sourceTabId) 
         sourceTabId:    sourceTabId,
         conversationId: convId,
       };
+      sendStatusUpdate(sourceTabId, "opening", model.name);
     });
   }).catch(function (err) {
     console.error("[DuperMemory] handleCapture memory read failed:", err);
@@ -138,6 +154,7 @@ function handleCapture(transcript, targetModelKey, conversationId, sourceTabId) 
     chrome.tabs.create({ url: model.url }, function (tab) {
       if (chrome.runtime.lastError) {
         console.error("[DuperMemory] Failed to open " + model.name + " tab:", chrome.runtime.lastError.message);
+        sendStatusUpdate(sourceTabId, "idle");
         return;
       }
       pendingContext[tab.id] = {
@@ -145,8 +162,71 @@ function handleCapture(transcript, targetModelKey, conversationId, sourceTabId) 
         sourceTabId:    sourceTabId,
         conversationId: convId,
       };
+      sendStatusUpdate(sourceTabId, "opening", model.name);
     });
   });
+}
+
+// ─── Keyboard shortcut ──────────────────────────────────────────────────────
+
+chrome.commands.onCommand.addListener(function (command) {
+  if (command === "toggle-dropdown") {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: "TOGGLE_DROPDOWN" }, function () {
+          if (chrome.runtime.lastError) { /* not a supported site */ }
+        });
+      }
+    });
+  }
+});
+
+// ─── Right-click context menu ───────────────────────────────────────────────
+
+chrome.runtime.onInstalled.addListener(function () {
+  chrome.contextMenus.removeAll(function () {
+    chrome.contextMenus.create({
+      id: "dupermemory-send",
+      title: "Send selection to\u2026",
+      contexts: ["selection"],
+      documentUrlPatterns: [
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://www.perplexity.ai/*",
+        "https://chat.deepseek.com/*",
+      ],
+    });
+    for (var key in MODEL_REGISTRY) {
+      chrome.contextMenus.create({
+        id: "dupermemory-send-" + key,
+        parentId: "dupermemory-send",
+        title: MODEL_REGISTRY[key].name,
+        contexts: ["selection"],
+      });
+    }
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(function (info, tab) {
+  if (!info.menuItemId || info.menuItemId.indexOf("dupermemory-send-") !== 0) return;
+  if (!info.selectionText) return;
+
+  var targetModelKey = info.menuItemId.replace("dupermemory-send-", "");
+  var sourceModel = getSourceModelFromUrl(tab.url);
+  if (sourceModel === targetModelKey) return;
+
+  handleCapture(info.selectionText, targetModelKey, null, tab.id);
+});
+
+function getSourceModelFromUrl(url) {
+  if (!url) return null;
+  if (url.indexOf("chatgpt.com") !== -1) return "chatgpt";
+  if (url.indexOf("claude.ai") !== -1) return "claude";
+  if (url.indexOf("gemini.google.com") !== -1) return "gemini";
+  if (url.indexOf("perplexity.ai") !== -1) return "perplexity";
+  if (url.indexOf("chat.deepseek.com") !== -1) return "deepseek";
+  return null;
 }
 
 // ─── Relay target's response back to the source tab ───────────────────────────

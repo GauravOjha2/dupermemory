@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "DuperMemory",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Send any AI conversation to another AI with one click. Supports ChatGPT, Claude, Gemini, Perplexity, and DeepSeek.",
 
   "permissions": [
     "tabs",
-    "storage"
+    "storage",
+    "contextMenus"
   ],
 
   "host_permissions": [
@@ -17,8 +18,23 @@
     "https://chat.deepseek.com/*"
   ],
 
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "DuperMemory"
+  },
+
   "background": {
     "service_worker": "background.js"
+  },
+
+  "commands": {
+    "toggle-dropdown": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+D",
+        "mac": "Command+Shift+D"
+      },
+      "description": "Toggle DuperMemory dropdown"
+    }
   },
 
   "content_scripts": [
